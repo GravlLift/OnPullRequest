@@ -1,0 +1,4 @@
+[submodule "AspLabs"]
+	path = AspLabs
+	url = https://github.com/NecatiMeral/AspLabs.git
+	branch = Receivers-AzureDevOps
