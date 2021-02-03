@@ -97,7 +97,7 @@ namespace OnPullRequest
                         }).ToList()
                     }, pullRequest.Repository.Project.Name);
 
-                    return new CreatedResult(release.Links.Links["self"].ToString(), null);
+                    return new CreatedResult(((ReferenceLink)release.Links.Links["self"]).Href, null);
                 }
                 else
                 {
