@@ -9,15 +9,21 @@ using Microsoft.Azure.Management.Fluent;
 using Microsoft.Azure.Management.ResourceManager.Fluent.Authentication;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using Microsoft.Extensions.Options;
+using Microsoft.VisualStudio.Services.ReleaseManagement.WebApi.Clients;
+using Microsoft.VisualStudio.Services.WebApi;
+using Microsoft.VisualStudio.Services.Common;
+using System.Linq;
+using Microsoft.VisualStudio.Services.ReleaseManagement.WebApi;
 
 namespace OnPullRequest
 {
-    public class PullRequestUpdated
+    internal class PullRequestUpdated
     {
         private readonly OnPullRequestConfiguration configuration;
         private readonly ILogger<PullRequestUpdated> logger;
 
-        public PullRequestUpdated(IOptions<OnPullRequestConfiguration> configuration, ILogger<PullRequestUpdated> logger)
+        public PullRequestUpdated(IOptions<OnPullRequestConfiguration> configuration,
+            ILogger<PullRequestUpdated> logger)
         {
             this.configuration = configuration.Value;
             this.logger = logger;
@@ -39,6 +45,33 @@ namespace OnPullRequest
             var pullRequest = ev.Resource;
             if (pullRequest.Status == "completed" || pullRequest.Status == "abandoned")
             {
+                var connection = new VssConnection(configuration.DevopsBaseUrl,
+                    new VssBasicCredential(string.Empty, configuration.PersonalAccessToken));
+                using (var releaseClient = connection.GetClient<ReleaseHttpClient>())
+                {
+                    var releases = await releaseClient.GetReleasesAsync(configuration.ReleaseDefinitionId,
+                        statusFilter: ReleaseStatus.Active);
+
+                    foreach (var release in releases)
+                    {
+                        logger.LogInformation($"Cancelling all environments for release {release.Id}...");
+                        foreach (var env in release.Environments
+                            .Where(e => (EnvironmentStatus.NotStarted | EnvironmentStatus.InProgress).HasFlag(e.Status)))
+                        {
+                            logger.LogInformation($"Cancelling environment {env.Id}...");
+                            await releaseClient.UpdateReleaseEnvironmentAsync(
+                                new ReleaseEnvironmentUpdateMetadata
+                                {
+                                    Status = EnvironmentStatus.Canceled
+                                },
+                                configuration.ProjectName,
+                                release.Id,
+                                env.Id);
+                        }
+                        logger.LogInformation($"All environments cancelled for release {release.Id}.");
+                    }
+                }
+
                 AzureCredentials creds;
                 if (configuration.UseAzureCLICredentials == true)
                 {
