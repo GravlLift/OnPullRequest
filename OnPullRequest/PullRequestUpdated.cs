@@ -49,11 +49,14 @@ namespace OnPullRequest
                     new VssBasicCredential(string.Empty, configuration.PersonalAccessToken));
                 using (var releaseClient = connection.GetClient<ReleaseHttpClient>())
                 {
+                    // Only get active releases created after the PR was created
                     var releases = await releaseClient.GetReleasesAsync(configuration.ReleaseDefinitionId,
-                        statusFilter: ReleaseStatus.Active);
+                        statusFilter: ReleaseStatus.Active, minCreatedTime: pullRequest.CreationDate);
 
-                    foreach (var release in releases)
+                    // Releases don't contain environment information, so we need to check each of them individually
+                    foreach (var releaseId in releases.Select(r => r.Id))
                     {
+                        var release = await releaseClient.GetReleaseAsync(configuration.ProjectName, releaseId);
                         logger.LogInformation($"Cancelling all environments for release {release.Id}...");
                         foreach (var env in release.Environments
                             .Where(e => (EnvironmentStatus.NotStarted | EnvironmentStatus.InProgress).HasFlag(e.Status)))
